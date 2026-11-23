@@ -12,7 +12,7 @@ tagged `<tool>-v<version>`, so they are versioned and published on their own.
 ## Install
 
 ```sh
-TOOL=compere VERSION=0.4.0          # a tool and a version from the releases page
+TOOL=compere VERSION=0.4.1          # a tool and a version from the releases page
 ASSET=$TOOL-$VERSION-darwin-arm64.tar.gz
 BASE=https://github.com/LeafAI/releases/releases/download/$TOOL-v$VERSION
 curl -fsSL -O $BASE/$ASSET -O $BASE/$ASSET.sha256
