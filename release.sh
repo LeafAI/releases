@@ -15,6 +15,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OSS="${OSS_DIR:-$(cd "$HERE/.." && pwd)}"
 REPO="${RELEASES_REPO:-LeafAI/releases}"
 DIST="$HERE/dist"
+# A local proxy is used when one is set up (direct access to api.github.com is unreliable on some networks).
+[ -z "${RELEASE_PROXY:-}" ] || export HTTPS_PROXY="$RELEASE_PROXY" HTTP_PROXY="$RELEASE_PROXY"
 export PATH="$HOME/.cargo/bin:$HOME/go/bin:/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 
 # component -> source directory (relative to $OSS) and branch the release must be built from
@@ -151,8 +153,12 @@ for c in "${COMPONENTS[@]}"; do
   check_source "$c" "$dir"
   version="$(version_of "$c" "$dir")"; [ -n "$version" ] || die "$c: cannot find a version"
   tag="$c-v$version"
-  if [ "$PUBLISH" = 1 ] && gh release view "$tag" -R "$REPO" >/dev/null 2>&1; then
-    die "$tag already exists in $REPO; bump the version, a published release is never replaced"
+  if [ "$PUBLISH" = 1 ]; then
+    if out="$(gh release view "$tag" -R "$REPO" 2>&1)"; then
+      die "$tag already exists in $REPO; bump the version, a published release is never replaced"
+    elif ! printf '%s' "$out" | grep -qi "release not found"; then
+      die "cannot tell whether $tag exists ($out); check the network and try again"
+    fi
   fi
   say "$c: building $version"
   bin="$HERE/.build/$c.bin"; build "$c" "$dir" "$version" "$bin"
@@ -164,8 +170,17 @@ for c in "${COMPONENTS[@]}"; do
   if [ "$PUBLISH" = 1 ]; then
     say "$c: publishing $tag"
     notes "$c" "$version" "$dir" "$sha" "$asset" > "$DIST/$tag.notes.md"
-    gh release create "$tag" "$asset_path" "$asset_path.sha256" -R "$REPO" \
-      --title "$c $version (macOS arm64)" --notes-file "$DIST/$tag.notes.md" --target main
+    # A network failure can happen after GitHub has already created the release, so every retry first
+    # asks whether it exists: a release is created once, and a half-finished upload is completed, not redone.
+    n=0
+    until gh release view "$tag" -R "$REPO" >/dev/null 2>&1; do
+      n=$((n + 1)); [ $n -le 4 ] || die "$tag: could not publish after 4 attempts (network?)"
+      gh release create "$tag" "$asset_path" "$asset_path.sha256" -R "$REPO" \
+        --title "$c $version (macOS arm64)" --notes-file "$DIST/$tag.notes.md" --target main || sleep $((n * 5))
+    done
+    have="$(gh release view "$tag" -R "$REPO" --json assets --jq '.assets[].name' | sort | tr '\n' ' ')"
+    want="$(printf '%s\n' "$asset" "$asset.sha256" | sort | tr '\n' ' ')"
+    [ "$have" = "$want" ] || die "$tag: the release has [$have], expected [$want]; upload the missing file with gh release upload"
     SUMMARY+=("published  $tag  $asset")
   else
     SUMMARY+=("built      $tag  $asset  (dry run: nothing uploaded; add --publish)")

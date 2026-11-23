@@ -44,3 +44,6 @@ whisper `main`, speaker `mistral.rs`), when a binary still names this machine, l
 is not arm64-only, or when the tag already exists: a published release is never replaced, bump the version.
 The version comes from `Cargo.toml` (whisper, speaker) or the newest `v*` tag (compere, which must have no
 commits after it unless `--version` is given).
+
+If GitHub is unreachable or slow from your network, set a proxy for the run: `RELEASE_PROXY=http://127.0.0.1:1080 ./release.sh all --publish`.
+A failed upload is safe to run again: an existing release is detected and a missing asset is reported, never silently replaced.
